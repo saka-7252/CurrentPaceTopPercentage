@@ -1,120 +1,47 @@
-﻿using LiveSplit.Model;
-using LiveSplit.UI;
-using LiveSplit.UI.Components;
-using System;
-using System.Drawing;
-using System.Linq;
-using System.Xml;
+using System.Windows.Forms;
 
 namespace LiveSplit.PercentileTracker
 {
-    public class DualPercentileComponent : IComponent
+    public class PercentileSettings : UserControl
     {
-        protected InfoTextComponent InternalComponent { get; set; }
-        public string ComponentName => "CurrentPaceTopPercentage";
+        public DualPercentileComponent.DisplayMode Mode { get; set; }
+        public int Decimals { get; set; }
 
-        public enum DisplayMode { GlobalOnly = 0, ReachOnly = 1, Both = 2 }
+        private ComboBox cmbMode;
+        private NumericUpDown nmDecimals;
 
-        private PercentileSettings Settings { get; set; }
-
-        public DualPercentileComponent(LiveSplitState state)
+        public PercentileSettings()
         {
-            InternalComponent = new InfoTextComponent("Current Pace (Top)", GetDashValue(DisplayMode.Both));
-            Settings = new PercentileSettings();
+            var tableLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Padding = new Padding(10) };
+            tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            tableLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50f));
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+            tableLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30f));
+
+            var label1 = new Label { Text = "Display Mode:", Anchor = AnchorStyles.Left, AutoSize = true };
+            cmbMode = new ComboBox { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbMode.Items.AddRange(new object[] { "Global (Includes Resets)", "Reach (Doesn't include Resets)", "Both (Global / Reach)" });
+            cmbMode.SelectedIndexChanged += (s, e) => Mode = (DualPercentileComponent.DisplayMode)cmbMode.SelectedIndex;
+
+            var label2 = new Label { Text = "Decimals:", Anchor = AnchorStyles.Left, AutoSize = true };
+            nmDecimals = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 0, Maximum = 5, Value = 2 };
+            nmDecimals.ValueChanged += (s, e) => Decimals = (int)nmDecimals.Value;
+
+            tableLayout.Controls.Add(label1, 0, 0);
+            tableLayout.Controls.Add(cmbMode, 1, 0);
+            tableLayout.Controls.Add(label2, 0, 1);
+            tableLayout.Controls.Add(nmDecimals, 1, 1);
+
+            this.Controls.Add(tableLayout);
+            this.Size = new System.Drawing.Size(350, 80);
         }
 
-        private string GetDashValue(DisplayMode mode)
+        public void SetSettings(DualPercentileComponent.DisplayMode mode, int decimals)
         {
-            switch (mode)
-            {
-                case DisplayMode.GlobalOnly: return "-";
-                case DisplayMode.ReachOnly: return "-";
-                default: return "- / -";
-            }
+            Mode = mode;
+            Decimals = decimals;
+            cmbMode.SelectedIndex = (int)mode;
+            nmDecimals.Value = decimals;
         }
-
-        private void CalculatePercentiles(LiveSplitState state)
-        {
-            if (state.CurrentPhase != TimerPhase.Running && state.CurrentPhase != TimerPhase.Paused)
-            {
-                InternalComponent.InformationValue = GetDashValue(Settings.Mode);
-                return;
-            }
-
-            int comparisonIndex = state.CurrentSplitIndex - 1;
-
-            if (comparisonIndex < 0)
-            {
-                UpdateValue(100.0, 100.0);
-                return;
-            }
-
-            var currentRunSplitTime = state.Run[comparisonIndex].SplitTime.RealTime;
-            if (!currentRunSplitTime.HasValue)
-            {
-                InternalComponent.InformationValue = GetDashValue(Settings.Mode);
-                return;
-            }
-
-            var segmentToCompare = state.Run[comparisonIndex];
-            int fasterRuns = segmentToCompare.SegmentHistory.Values
-                .Count(time => time.RealTime.HasValue && time.RealTime.Value < currentRunSplitTime.Value) + 1;
-
-            int totalAttempts = state.Run.AttemptHistory.Count + 1;
-            int totalReached = segmentToCompare.SegmentHistory.Count + 1;
-
-            UpdateValue((double)fasterRuns / totalAttempts * 100, (double)fasterRuns / totalReached * 100);
-        }
-
-        private void UpdateValue(double global, double reach)
-        {
-            string format = $"F{Settings.Decimals}";
-            switch (Settings.Mode)
-            {
-                case DisplayMode.GlobalOnly:
-                    InternalComponent.InformationValue = $"{global.ToString(format)}%";
-                    break;
-                case DisplayMode.ReachOnly:
-                    InternalComponent.InformationValue = $"{reach.ToString(format)}%";
-                    break;
-                default:
-                    InternalComponent.InformationValue = $"{global.ToString(format)}% / {reach.ToString(format)}%";
-                    break;
-            }
-        }
-
-        public void Update(IInvalidator invalidator, LiveSplitState state, float width, float height, LayoutMode mode)
-        {
-            InternalComponent.NameLabel.ForeColor = state.LayoutSettings.TextColor;
-            InternalComponent.ValueLabel.ForeColor = state.LayoutSettings.TextColor;
-            InternalComponent.NameLabel.HasShadow = state.LayoutSettings.DropShadows;
-            InternalComponent.ValueLabel.HasShadow = state.LayoutSettings.DropShadows;
-
-            CalculatePercentiles(state);
-
-            InternalComponent.Update(invalidator, state, width, height, mode);
-        }
-
-        public void DrawVertical(Graphics g, LiveSplitState state, float width, Region clipRegion) => InternalComponent.DrawVertical(g, state, width, clipRegion);
-        public void DrawHorizontal(Graphics g, LiveSplitState state, float height, Region clipRegion) => InternalComponent.DrawHorizontal(g, state, height, clipRegion);
-        public float VerticalHeight => InternalComponent.VerticalHeight;
-        public float HorizontalWidth => InternalComponent.HorizontalWidth;
-        public float MinimumHeight => InternalComponent.MinimumHeight;
-        public float MinimumWidth => InternalComponent.MinimumWidth;
-        public float PaddingTop => InternalComponent.PaddingTop;
-        public float PaddingLeft => InternalComponent.PaddingLeft;
-        public float PaddingBottom => InternalComponent.PaddingBottom;
-        public float PaddingRight => InternalComponent.PaddingRight;
-        public System.Collections.Generic.IDictionary<string, Action> ContextMenuControls => null;
-        public void SetSettings(XmlNode settings) => Settings.SetSettings(SettingsHelper.ParseEnum<DisplayMode>(settings["DisplayMode"], DisplayMode.Both), SettingsHelper.ParseInt(settings["Decimals"], 2));
-        public XmlNode GetSettings(XmlDocument document)
-        {
-            var parent = document.CreateElement("Settings");
-            SettingsHelper.CreateSetting(document, parent, "DisplayMode", Settings.Mode);
-            SettingsHelper.CreateSetting(document, parent, "Decimals", Settings.Decimals);
-            return parent;
-        }
-        public System.Windows.Forms.Control GetSettingsControl(LayoutMode mode) => Settings;
-        public void Dispose() => Settings.Dispose();
     }
 }
